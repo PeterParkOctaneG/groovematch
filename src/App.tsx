@@ -66,7 +66,8 @@ Mr. Brightside - The Killers
 Redbone - Childish Gambino
 …
 
-Artists, genres and hints like "workout" or "chill lofi" work too.`;
+Artists, "Artist - Song", "Song by Artist" and two-column CSV exports work too.
+Hints like "workout" or "chill lofi" can refine the results.`;
 
 function energyLabel(e: number): string {
   if (e <= 2.5) return "Mellow";
@@ -238,23 +239,44 @@ export default function App() {
                     <CardTitle className="text-sm font-medium text-slate-400">Energy level</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex items-end gap-3">
-                      <span className="text-4xl font-extrabold text-fuchsia-300">
-                        {result.profile.avgEnergy.toFixed(1)}
-                      </span>
-                      <span className="pb-1 text-sm text-slate-500">/ 10</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm font-medium text-violet-300">
-                      {result.profile.avgEnergy > 6 ? (
-                        <Flame className="h-4 w-4" />
-                      ) : (
-                        <Waves className="h-4 w-4" />
+                    {result.profile.avgEnergy !== null ? (
+                      <>
+                        <div className="flex items-end gap-3">
+                          <span className="text-4xl font-extrabold text-fuchsia-300">
+                            {result.profile.avgEnergy.toFixed(1)}
+                          </span>
+                          <span className="pb-1 text-sm text-slate-500">/ 10</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm font-medium text-violet-300">
+                          {result.profile.avgEnergy > 6 ? (
+                            <Flame className="h-4 w-4" />
+                          ) : (
+                            <Waves className="h-4 w-4" />
+                          )}
+                          {energyLabel(result.profile.avgEnergy)}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-sm text-slate-400">
+                        Add recognizable songs to estimate your energy range.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-400">
+                      <Badge variant="outline" className="border-white/15">
+                        {result.profile.recognizedTracks} songs
+                      </Badge>
+                      <Badge variant="outline" className="border-white/15">
+                        {result.profile.recognizedArtists} artists
+                      </Badge>
+                      {result.profile.hintCount > 0 && (
+                        <Badge variant="outline" className="border-white/15">
+                          {result.profile.hintCount} hints
+                        </Badge>
                       )}
-                      {energyLabel(result.profile.avgEnergy)}
                     </div>
                     <p className="text-xs leading-relaxed text-slate-500">
                       Recognized {result.profile.recognizedCount} of {result.profile.totalLines}{" "}
-                      lines in your input.
+                      unique input lines. Duplicates are counted once.
                     </p>
                   </CardContent>
                 </Card>
@@ -266,12 +288,17 @@ export default function App() {
               <h2 className="mb-1 flex items-center gap-2 text-xl font-bold">
                 <Heart className="h-5 w-5 text-pink-400" /> Fitted for you
               </h2>
-              <p className="mb-4 text-sm text-slate-500">
-                {result.recommendations.length} tracks scored against your profile
+              <p className="mb-1 text-sm text-slate-500">
+                {result.recommendations.length} tracks ranked by genre, mood, energy, era and artist affinity
+              </p>
+              <p className="mb-4 text-xs text-slate-600">
+                Fit scores are calibrated across the catalog; artist and genre repetition is penalized for variety.
               </p>
               {result.recommendations.length === 0 ? (
                 <Card className="border-white/10 bg-white/[0.04] p-8 text-center text-slate-400">
-                  No close matches — try adding more songs or artists to your input.
+                  {result.profile.recognizedCount === 0
+                    ? "Nothing recognizable yet. Try Song - Artist, Artist - Song, Song by Artist, or a two-column CSV export."
+                    : "No close matches yet — add a few more songs or artists to sharpen your profile."}
                 </Card>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
