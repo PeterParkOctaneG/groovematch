@@ -8,6 +8,24 @@ import {
 
 export type MatchKind = "track" | "artist" | "keywords";
 
+/** Tunable vibe dimensions. Each track carries a 0-1 value per aspect; the
+ * user's slider positions act as target intensities that re-rank candidates. */
+export const ASPECTS = [
+  { key: "energy", label: "Energy" },
+  { key: "emo", label: "Emo" },
+  { key: "indie", label: "Indie" },
+  { key: "gym", label: "Gym" },
+  { key: "chill", label: "Chill" },
+  { key: "party", label: "Party" },
+  { key: "nostalgic", label: "Nostalgic" },
+] as const;
+
+export type AspectKey = (typeof ASPECTS)[number]["key"];
+export type AspectScores = Record<AspectKey, number>;
+/** Slider positions: desired intensity (0-1) per aspect. Absent aspects are
+ * treated as "leave my mix alone" and are excluded from re-ranking. */
+export type AspectPrefs = Partial<Record<AspectKey, number>>;
+
 export interface ParsedInput {
   raw: string;
   matchedArtist: string | null;
@@ -102,7 +120,7 @@ const GENRE_PARENTS: Record<string, string[]> = {
   "indie rock": ["indie", "rock"],
   alternative: ["rock", "indie"],
   grunge: ["rock", "alternative"],
-  "garage rock": ["rock", "indie rock"],
+  "garage rock": ["indie rock"],
   britpop: ["rock", "alternative"],
   "post-punk": ["rock", "alternative"],
   "new wave": ["pop", "rock"],
@@ -369,7 +387,7 @@ export function splitLines(input: string): string[] {
     )
     .map((line) =>
       line
-        .replace(/^\s*(?:\d+\s*[.):\-]|[-*•])\s+/, "")
+        .replace(/^\s*(?:\d+\s*[.):-]|[-*•])\s+/, "")
         .replace(/^["']|["']$/g, "")
         .trim()
     )
@@ -573,7 +591,208 @@ function eraFit(track: Track, favoriteDecade: string | null): number {
   return difference === 0 ? 1 : difference === 1 ? 0.65 : difference === 2 ? 0.35 : 0.1;
 }
 
-export function analyze(input: string): AnalysisResult {
+/* ── Aspect vectors ─────────────────────────────────────────────────── */
+
+function tagAffinity(tags: string[], table: Record<string, number>): number {
+  let sum = 0;
+  for (const tag of tags) sum += table[tag] ?? 0;
+  return Math.min(1, sum);
+}
+
+const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
+
+const EMO_MOODS: Record<string, number> = {
+  sad: 0.55,
+  melancholy: 0.55,
+  emotional: 0.6,
+  heartbreak: 0.55,
+  bittersweet: 0.4,
+  moody: 0.4,
+  angsty: 0.4,
+  raw: 0.35,
+  dramatic: 0.3,
+  poetic: 0.25,
+  reflective: 0.2,
+};
+
+const EMO_GENRES: Record<string, number> = {
+  "singer-songwriter": 0.3,
+  folk: 0.2,
+  indie: 0.15,
+  "indie rock": 0.15,
+  americana: 0.15,
+};
+
+const INDIE_GENRES: Record<string, number> = {
+  indie: 0.6,
+  "indie rock": 0.6,
+  alternative: 0.45,
+  "dream pop": 0.5,
+  "art pop": 0.4,
+  "baroque pop": 0.35,
+  "garage rock": 0.4,
+  britpop: 0.45,
+  "post-punk": 0.45,
+  psychedelic: 0.4,
+  "singer-songwriter": 0.3,
+  folk: 0.2,
+};
+
+const GYM_GENRES: Record<string, number> = {
+  "hip-hop": 0.3,
+  rap: 0.3,
+  trap: 0.35,
+  edm: 0.35,
+  house: 0.3,
+  techno: 0.3,
+  dubstep: 0.3,
+  "hard rock": 0.3,
+  rock: 0.15,
+  metal: 0.35,
+  "heavy metal": 0.35,
+  "nu-metal": 0.35,
+  "thrash metal": 0.35,
+  punk: 0.3,
+  industrial: 0.3,
+  "funk rock": 0.25,
+};
+
+const GYM_MOODS: Record<string, number> = {
+  empowering: 0.3,
+  intense: 0.35,
+  anthemic: 0.3,
+  confident: 0.25,
+  energetic: 0.25,
+  chaotic: 0.25,
+  epic: 0.2,
+};
+
+const CHILL_MOODS: Record<string, number> = {
+  chill: 0.6,
+  peaceful: 0.55,
+  dreamy: 0.45,
+  hypnotic: 0.45,
+  reflective: 0.3,
+  cool: 0.3,
+  classy: 0.2,
+};
+
+const CHILL_GENRES: Record<string, number> = {
+  ambient: 0.5,
+  downtempo: 0.45,
+  "soft rock": 0.3,
+  "neo-soul": 0.25,
+  "bossa nova": 0.35,
+  neoclassical: 0.25,
+  classical: 0.2,
+  piano: 0.2,
+};
+
+const PARTY_GENRES: Record<string, number> = {
+  dance: 0.55,
+  disco: 0.5,
+  funk: 0.45,
+  house: 0.45,
+  edm: 0.45,
+  eurodance: 0.5,
+  trance: 0.4,
+  techno: 0.4,
+  reggaeton: 0.4,
+  salsa: 0.35,
+  reggae: 0.25,
+};
+
+const PARTY_MOODS: Record<string, number> = {
+  party: 0.55,
+  groovy: 0.45,
+  euphoric: 0.4,
+  summer: 0.35,
+  happy: 0.25,
+  playful: 0.2,
+};
+
+/** Derive a 0-1 value for every tunable aspect straight from catalog
+ * metadata — no new data needed, and every aspect stays explainable. */
+export function trackAspects(track: Track): AspectScores {
+  const e = track.energy / 10;
+  return {
+    energy: e,
+    emo: clamp01(
+      0.75 * tagAffinity(track.moods, EMO_MOODS) +
+        0.25 * tagAffinity(track.genres, EMO_GENRES)
+    ),
+    indie: tagAffinity(track.genres, INDIE_GENRES),
+    gym: clamp01(0.45 * e + 0.35 * tagAffinity(track.genres, GYM_GENRES) + 0.2 * tagAffinity(track.moods, GYM_MOODS)),
+    chill: clamp01(
+      0.55 * tagAffinity(track.moods, CHILL_MOODS) +
+        0.25 * tagAffinity(track.genres, CHILL_GENRES) +
+        0.2 * (1 - e)
+    ),
+    party: clamp01(
+      0.65 * tagAffinity(track.genres, PARTY_GENRES) +
+        0.35 * tagAffinity(track.moods, PARTY_MOODS)
+    ),
+    nostalgic: clamp01(0.6 * clamp01((2024 - track.year) / 45) + 0.4 * tagAffinity(track.moods, { nostalgic: 0.7 })),
+  };
+}
+
+/** Natural slider positions implied by a taste profile — the starting point
+ * users drag away from. Purely derived from the same signals analyze() uses. */
+export function defaultAspectPrefs(profile: TasteProfile): AspectPrefs {
+  const totalMood = profile.moodWeights.reduce((sum, m) => sum + m.weight, 0) || 1;
+  const totalGenre = profile.genreWeights.reduce((sum, g) => sum + g.weight, 0) || 1;
+  const moodShare = (table: Record<string, number>): number =>
+    profile.moodWeights.reduce((sum, m) => sum + (table[m.mood] ?? 0) * m.weight, 0) / totalMood;
+  const genreShare = (table: Record<string, number>): number =>
+    profile.genreWeights.reduce((sum, g) => sum + (table[g.genre] ?? 0) * g.weight, 0) / totalGenre;
+
+  const energy = profile.avgEnergy === null ? 0.5 : profile.avgEnergy / 10;
+  const retroShare =
+    profile.decadeWeights.reduce(
+      (sum, d) => sum + (Number.parseInt(d.decade, 10) < 2000 ? d.weight : 0),
+      0
+    ) /
+      (profile.decadeWeights.reduce((sum, d) => sum + d.weight, 0) || 1);
+
+  return {
+    energy: clamp01(energy),
+    emo: clamp01(moodShare(EMO_MOODS)),
+    indie: clamp01(genreShare(INDIE_GENRES)),
+    gym: clamp01(0.45 * energy + 0.35 * genreShare(GYM_GENRES) + 0.2 * moodShare(GYM_MOODS)),
+    chill: clamp01(0.55 * moodShare(CHILL_MOODS) + 0.25 * genreShare(CHILL_GENRES) + 0.2 * (1 - energy)),
+    party: clamp01(0.65 * genreShare(PARTY_GENRES) + 0.35 * moodShare(PARTY_MOODS)),
+    nostalgic: clamp01(0.6 * retroShare + 0.4 * moodShare({ nostalgic: 0.7 })),
+  };
+}
+
+/** How strongly the given prefs should steer ranking (0 when no sliders set). */
+function aspectBlend(prefs: AspectPrefs | undefined): number {
+  if (!prefs) return 0;
+  const total = Object.values(prefs).reduce((sum, v) => sum + (v ?? 0), 0);
+  return Math.min(0.7, total * 0.35);
+}
+
+function aspectAlignment(track: Track, prefs: AspectPrefs): { value: number; best: { key: AspectKey; closeness: number } | null } {
+  const scores = trackAspects(track);
+  let weighted = 0;
+  let weightSum = 0;
+  let best: { key: AspectKey; closeness: number } | null = null;
+  let bestWeighted = 0;
+  for (const { key } of ASPECTS) {
+    const w = prefs[key];
+    if (w === undefined || w <= 0.01) continue;
+    const closeness = 1 - Math.abs(scores[key] - w);
+    weighted += w * closeness;
+    weightSum += w;
+    if (w * closeness > bestWeighted) {
+      bestWeighted = w * closeness;
+      best = { key, closeness };
+    }
+  }
+  return { value: weightSum > 0 ? weighted / weightSum : 0, best };
+}
+
+export function analyze(input: string, prefs?: AspectPrefs): AnalysisResult {
   const lines = splitLines(input);
   const parsed: ParsedInput[] = [];
   const genreAcc = new Map<string, number>();
@@ -678,6 +897,7 @@ export function analyze(input: string): AnalysisResult {
 
   const expandedUserGenres = expandGenres(genreAcc);
   const favoriteDecade = topDecade(decadeWeights);
+  const blend = aspectBlend(prefs);
   const candidates: {
     recommendation: Recommendation;
     primaryArtist: string;
@@ -722,21 +942,41 @@ export function analyze(input: string): AnalysisResult {
       genreWeight += 0.06;
       moodWeight += 0.04;
     }
-    const score =
+    // Base taste fit, used for the admission gate below. Slider blending
+    // steers ranking toward the vibe the user dialed in, and aspect pull also
+    // acts as a side gate — a track that strongly matches an active slider
+    // (e.g. Chill maxed on a gym playlist) may enter the pool even when its
+    // base taste fit is low; otherwise sliders could only re-shuffle an
+    // already fixed list.
+    const baseScore =
       genreFit * genreWeight +
       moodFit * moodWeight +
       energyFit * (profile.avgEnergy === null ? 0 : 0.16) +
       decadeFit * (favoriteDecade ? 0.1 : 0) +
       artistFit * 0.2;
+    const aspect = prefs && blend > 0 ? aspectAlignment(track, prefs) : null;
+    const aspectPull = aspect && blend > 0 ? aspect.value * blend : 0;
+    const unrelated = genreFit < 0.16 && moodFit < 0.18 && artistFit === 0;
 
-    if (
-      score < 0.27 ||
-      (genreFit < 0.16 && moodFit < 0.18 && artistFit === 0)
-    ) {
+    if (baseScore + aspectPull < 0.27 || (unrelated && aspectPull < 0.18)) {
       continue;
     }
 
+    const score =
+      aspect && blend > 0
+        ? baseScore * (1 - blend) + aspect.value * blend
+        : baseScore;
+
     const reasons: string[] = [];
+    if (
+      aspect?.best &&
+      blend > 0 &&
+      (prefs?.[aspect.best.key] ?? 0) >= 0.35 &&
+      aspect.best.closeness >= 0.75
+    ) {
+      const label = ASPECTS.find((a) => a.key === aspect.best!.key)?.label ?? aspect.best.key;
+      reasons.push(`On your ${label} wavelength`);
+    }
     const matchedArtistKey = keys.find((key) => artistAcc.has(key));
     if (matchedArtistKey) {
       reasons.push(`From ${artistNames.get(matchedArtistKey) ?? track.artist}, an artist in your input`);
