@@ -16,7 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { analyze, type AnalysisResult } from "@/lib/engine";
+import { analyze, defaultAspectPrefs, type AnalysisResult, type AspectKey, type AspectPrefs } from "@/lib/engine";
+import AspectMixer from "@/components/AspectMixer";
 
 const SAMPLES: { label: string; text: string }[] = [
   {
@@ -78,15 +79,43 @@ function energyLabel(e: number): string {
 
 export default function App() {
   const [input, setInput] = useState("");
-  const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [analyzed, setAnalyzed] = useState(false);
+  const [aspectPrefs, setAspectPrefs] = useState<AspectPrefs | null>(null);
+
+  // Recompute on every slider drag so the list re-ranks live; the engine is
+  // cheap (115-track catalog) so this stays smooth without debouncing.
+  const result: AnalysisResult | null = useMemo(
+    () => (analyzed && input.trim() ? analyze(input, aspectPrefs ?? undefined) : null),
+    [analyzed, input, aspectPrefs]
+  );
+
+  const naturalPrefs = useMemo<AspectPrefs>(
+    () => (result ? defaultAspectPrefs(result.profile) : {}),
+    [result]
+  );
 
   const run = () => {
     if (!input.trim()) return;
-    setResult(analyze(input));
+    setAnalyzed(true);
     requestAnimationFrame(() => {
       document.getElementById("results")?.scrollIntoView({ behavior: "smooth" });
     });
   };
+
+  const handleAspectChange = (key: AspectKey, value: number) => {
+    // Only user-touched aspects enter the tuning set. Untouched bars are
+    // display-only (they show the natural position) so they never dilute a
+    // deliberate drag. Dragging back onto the natural tick releases the bar.
+    setAspectPrefs((prev) => {
+      const next = { ...(prev ?? {}) };
+      const naturalValue = naturalPrefs[key] ?? 0.5;
+      if (Math.abs(value - naturalValue) < 0.02) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+  };
+
+  const resetAspects = () => setAspectPrefs(null);
 
   const genreMax = useMemo(
     () => Math.max(...(result?.profile.genreWeights.map((g) => g.weight) ?? [1]), 1),
@@ -177,7 +206,8 @@ export default function App() {
                   className="text-slate-400 hover:text-slate-200"
                   onClick={() => {
                     setInput("");
-                    setResult(null);
+                    setAnalyzed(false);
+                    setAspectPrefs(null);
                   }}
                 >
                   <RotateCcw className="mr-2 h-4 w-4" /> Start over
@@ -282,6 +312,15 @@ export default function App() {
                 </Card>
               </div>
             </section>
+
+            {/* aspect mixer */}
+            <AspectMixer
+              prefs={aspectPrefs ?? naturalPrefs}
+              natural={naturalPrefs}
+              active={aspectPrefs !== null}
+              onChange={handleAspectChange}
+              onReset={resetAspects}
+            />
 
             {/* recommendations */}
             <section>

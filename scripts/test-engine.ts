@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { analyze, parseLine, splitLines } from "../src/lib/engine.ts";
+import { CATALOG } from "../src/data/catalog.ts";
+import {
+  ASPECTS,
+  analyze,
+  defaultAspectPrefs,
+  parseLine,
+  splitLines,
+  trackAspects,
+} from "../src/lib/engine.ts";
 
 let assertions = 0;
 function check(value: unknown, message: string): asserts value {
@@ -103,6 +111,79 @@ check(
     r.track.genres.some((genre) => ["electronic", "house", "deep house"].includes(genre))
   ),
   "subgenre families inform recommendations"
+);
+
+// ── Aspect tuning ─────────────────────────────────────────────────────
+const aspectsByTitle = (title: string) => {
+  const track = CATALOG.find((t) => t.title === title);
+  check(!!track, `${title} exists in catalog`);
+  return trackAspects(track!);
+};
+
+check(aspectsByTitle("Enter Sandman").gym > 0.7, "Enter Sandman reads as gym material");
+check(aspectsByTitle("Weightless").chill > 0.6, "Weightless reads as chill");
+check(aspectsByTitle("Creep").emo > 0.5, "Creep reads as emo");
+check(aspectsByTitle("Mr. Brightside").indie > 0.5, "Mr. Brightside reads as indie");
+check(aspectsByTitle("Uptown Funk").party > 0.5, "Uptown Funk reads as party");
+check(aspectsByTitle("Bohemian Rhapsody").nostalgic > 0.5, "Bohemian Rhapsody reads as nostalgic");
+check(aspectsByTitle("Levels").energy > 0.8, "Levels reads as high-energy");
+check(
+  aspectsByTitle("Take On Me").emo < aspectsByTitle("Creep").emo,
+  "synth-pop happy track is less emo than Creep"
+);
+
+const mixInput =
+  "Blinding Lights - The Weeknd\nHolocene - Bon Iver\nUptown Funk - Mark Ronson";
+const neutralMix = analyze(mixInput);
+const gymMix = analyze(mixInput, { gym: 1 });
+const chillMix = analyze(mixInput, { chill: 1 });
+check(gymMix.recommendations.length > 0, "gym tuning keeps recommendations");
+check(chillMix.recommendations.length > 0, "chill tuning keeps recommendations");
+check(
+  gymMix.recommendations.map((r) => r.track.title).join() !==
+    neutralMix.recommendations.map((r) => r.track.title).join(),
+  "gym tuning visibly re-orders the list"
+);
+const gymInput =
+  "Lose Yourself - Eminem\nSicko Mode - Travis Scott\nEnter Sandman - Metallica\nhigh energy workout";
+const gymNeutral = analyze(gymInput);
+const gymToChill = analyze(gymInput, { chill: 1 });
+const gymNeutralTitles = new Set(gymNeutral.recommendations.map((r) => r.track.title));
+const chillNewcomers = gymToChill.recommendations.filter(
+  (r) => !gymNeutralTitles.has(r.track.title) && trackAspects(r.track).chill >= 0.55
+);
+check(chillNewcomers.length >= 2, "maxing Chill on a gym playlist admits chill tracks into the pool");
+check(
+  gymToChill.recommendations.some((r) => r.reasons.some((reason) => reason.includes("Chill"))),
+  "aspect-admitted tracks explain themselves with a Chill reason"
+);
+check(
+  gymMix.recommendations.map((r) => r.track.title).join() !==
+    chillMix.recommendations.map((r) => r.track.title).join(),
+  "opposite vibes produce different orderings"
+);
+const avgAspect = (recs: ReturnType<typeof analyze>["recommendations"], key: keyof ReturnType<typeof trackAspects>) =>
+  recs
+    .slice(0, 6)
+    .reduce((sum, r) => sum + trackAspects(r.track)[key], 0) / Math.min(6, recs.length);
+check(
+  avgAspect(gymMix.recommendations, "gym") > avgAspect(neutralMix.recommendations, "gym"),
+  "gym tuning raises the gym lean of the list"
+);
+check(
+  avgAspect(chillMix.recommendations, "chill") > avgAspect(neutralMix.recommendations, "chill"),
+  "chill tuning raises the chill lean of the list"
+);
+check(
+  analyze(mixInput).recommendations.map((r) => r.track.title).join() ===
+    neutralMix.recommendations.map((r) => r.track.title).join(),
+  "analyze without prefs is byte-identical to neutral tuning"
+);
+const naturalDefaults = defaultAspectPrefs(neutralMix.profile);
+check(
+  Object.keys(naturalDefaults).length === ASPECTS.length &&
+    Object.values(naturalDefaults).every((v) => v >= 0 && v <= 1),
+  "defaultAspectPrefs returns a normalized value for every aspect"
 );
 
 console.log(`Engine regression tests passed: ${assertions} assertions`);
