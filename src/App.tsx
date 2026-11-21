@@ -10,6 +10,8 @@ import {
   RotateCcw,
   Heart,
   Radio,
+  Shuffle,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -149,6 +151,15 @@ function energyLabel(e: number): string {
   return "High-Octane";
 }
 
+/** Deterministic sample-of-the-day: same vibe for everyone on a given date. */
+function dailySampleIndex(date: Date = new Date()): number {
+  const yearStart = new Date(date.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor(
+    (date.getTime() - yearStart.getTime()) / 86_400_000
+  );
+  return dayOfYear % SAMPLES.length;
+}
+
 export default function App() {
   const [input, setInput] = useState("");
   const [analyzed, setAnalyzed] = useState(false);
@@ -173,6 +184,23 @@ export default function App() {
       document.getElementById("results")?.scrollIntoView({ behavior: "smooth" });
     });
   };
+
+  /** Load a sample and analyze it in one click. */
+  const runSample = (text: string) => {
+    setInput(text);
+    setAspectPrefs(null);
+    setAnalyzed(true);
+    requestAnimationFrame(() => {
+      document.getElementById("results")?.scrollIntoView({ behavior: "smooth" });
+    });
+  };
+
+  const surprise = () => {
+    const pick = SAMPLES[Math.floor(Math.random() * SAMPLES.length)];
+    runSample(pick.text);
+  };
+
+  const dailyPick = SAMPLES[dailySampleIndex()];
 
   const handleAspectChange = (key: AspectKey, value: number) => {
     // Only user-touched aspects enter the tuning set. Untouched bars are
@@ -271,6 +299,22 @@ export default function App() {
               >
                 <Sparkles className="mr-2 h-4 w-4" />
                 Analyze my taste
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => runSample(dailyPick.text)}
+                className="border-white/15 bg-white/5 text-slate-300 hover:bg-fuchsia-500/15 hover:text-fuchsia-200"
+              >
+                <CalendarDays className="mr-2 h-4 w-4 text-amber-300" />
+                Daily pick: {dailyPick.label}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={surprise}
+                className="border-white/15 bg-white/5 text-slate-300 hover:bg-fuchsia-500/15 hover:text-fuchsia-200"
+              >
+                <Shuffle className="mr-2 h-4 w-4 text-cyan-300" />
+                Surprise me
               </Button>
               {result && (
                 <Button
