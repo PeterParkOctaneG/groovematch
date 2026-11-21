@@ -58,6 +58,78 @@ An Ending (Ascent) - Brian Eno
 Take Five - Dave Brubeck
 study focus peaceful`,
   },
+  {
+    label: "Pop Party",
+    text: `Uptown Funk - Mark Ronson
+Levitating - Dua Lipa
+Can't Stop the Feeling! - Justin Timberlake
+Shake It Off - Taylor Swift
+Espresso - Sabrina Carpenter
+feel good party pop`,
+  },
+  {
+    label: "Hip-Hop Heat",
+    text: `HUMBLE. - Kendrick Lamar
+God's Plan - Drake
+Gold Digger - Kanye West
+Hotline Bling - Drake
+N.Y. State of Mind - Nas
+hip hop rap`,
+  },
+  {
+    label: "R&B Slow Jams",
+    text: `No Diggity - Blackstreet
+Thinkin Bout You - Frank Ocean
+Best Part - Daniel Caesar
+Let's Stay Together - Al Green
+Cranes in the Sky - Solange
+smooth r&b soul`,
+  },
+  {
+    label: "Metal Mayhem",
+    text: `Enter Sandman - Metallica
+Master of Puppets - Metallica
+Chop Suey! - System of a Down
+Paranoid - Black Sabbath
+Du Hast - Rammstein
+heavy metal rock`,
+  },
+  {
+    label: "EDM Night Drive",
+    text: `Levels - Avicii
+Strobe - Deadmau5
+Midnight City - M83
+Fade Into Darkness - Avicii
+Innerbloom - RÜFÜS DU SOL
+euphoric edm electronic`,
+  },
+  {
+    label: "Jazz & Soul",
+    text: `So What - Miles Davis
+Take Five - Dave Brubeck
+Feeling Good - Nina Simone
+At Last - Etta James
+Fly Me to the Moon - Frank Sinatra
+classy jazz soul`,
+  },
+  {
+    label: "Country & Folk",
+    text: `Jolene - Dolly Parton
+Take Me Home, Country Roads - John Denver
+Tennessee Whiskey - Chris Stapleton
+Ring of Fire - Johnny Cash
+Ho Hey - The Lumineers
+country folk americana`,
+  },
+  {
+    label: "Latin Fiesta",
+    text: `Despacito - Luis Fonsi
+Bailando - Enrique Iglesias
+Vivir Mi Vida - Marc Anthony
+Danza Kuduro - Don Omar
+Waka Waka (This Time for Africa) - Shakira
+fiesta latin reggaeton`,
+  },
 ];
 
 const PLACEHOLDER = `Paste your playlists here — one song per line, like:
